@@ -28,7 +28,7 @@ class UserSignup(BaseModel):
 # Simple health check endpoint
 
 #DB
-from db import users,products
+from app.db import users,products
 ###
 @app.get("/health")
 def health_check():

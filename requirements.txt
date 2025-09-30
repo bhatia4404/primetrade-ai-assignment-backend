@@ -1,3 +1,5 @@
 fastapi[standard]
 pyjwt
 bcrypt
+gunicorn
+uvicorn
