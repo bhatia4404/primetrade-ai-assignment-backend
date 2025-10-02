@@ -1,5 +1,8 @@
 import motor.motor_asyncio
-DB_URL = "mongodb+srv://shivambhatiag_db_user:shivam123@cluster1.2olj9kl.mongodb.net/"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+DB_URL = os.getenv("DB_URL")
 client = motor.motor_asyncio.AsyncIOMotorClient(DB_URL)
 database = client.data
 product_collection = database.get_collection("products_collection")
@@ -37,25 +40,11 @@ async def add_user(user_data: dict) -> dict:
 
 
 # Retrieve a user with a matching ID
-async def retrieve_user(username: str) -> dict:
+async def retrieve_user(username: str):
     user = await user_collection.find_one({"username":username })
     if user:
         return user_helper(user)
-
-
-# Update a user with a matching ID
-async def update_user(id: str, data: dict):
-    # Return false if an empty request body is sent.
-    if len(data) < 1:
-        return False
-    user = await user_collection.find_one({"_id": ObjectId(id)})
-    if user:
-        updated_user = await user_collection.update_one(
-            {"_id": ObjectId(id)}, {"$set": data}
-        )
-        if updated_user:
-            return True
-        return False
+    return None
 
 
 # Delete a user from the database
@@ -76,6 +65,11 @@ async def add_product(product_data: dict) -> dict:
     new_product = await product_collection.find_one({"_id": product.inserted_id})
     return product_helper(new_product)
 
+async def delete_product(product_id: int):
+    product = await product_collection.find_one({"product_id": int(product_id)})
+    if product:
+        await product_collection.delete_one({"product_id": int(product_id)})
+        return True
 
 # Sample Data
 '''

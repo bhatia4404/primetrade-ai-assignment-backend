@@ -6,9 +6,9 @@ import jwt
 from http import HTTPStatus
 from typing import Optional
 import bcrypt
-from .database import (add_user,delete_user,retrieve_user,retrieve_users,update_user,retrieve_products,add_product)
+from .database import (add_user,delete_product,retrieve_user,retrieve_users,retrieve_products,add_product)
 from fastapi.encoders import jsonable_encoder
-from .schema import User,Product
+from .schema import Product,healthcheckResponse
 app=FastAPI()
 security_scheme = HTTPBearer()
 
@@ -28,17 +28,14 @@ class UserSignup(BaseModel):
         if value.lower() not in ['admin', 'user']:
             raise ValueError('Role must be either admin or user')
         return value
-# Simple health check endpoint
 
-#DB
-from app.db import users,products
-###
+# Simple health check endpoint
 @app.get("/health")
-def health_check():
+def health_check() -> healthcheckResponse:
     return {"status": "ok"}
 
 @app.post("/register")
-async def register(user : UserSignup):
+async def register(user : UserSignup) -> dict:
     try:
         username=user.username.lower()
         password=user.password
@@ -46,7 +43,7 @@ async def register(user : UserSignup):
         lastname=user.lastname
         role=user.role.lower()
         users=await retrieve_users()
-        print(users)
+        # print(users)
         for u in users:
             if u["username"]==username:
                 return {"error": "User already exists"}
@@ -65,23 +62,27 @@ async def register(user : UserSignup):
         # add to db
         # users.append({"username":username,"password":password,"firstname":firstname,"lastname":lastname,"role":role})
         # print("User Registered : ",users[-1])
-        token = jwt.encode({"username": userjson["username"]}, "secret", algorithm="HS256")
-        return JSONResponse(content={"token": token},status_code=HTTPStatus.CREATED)
+        token = jwt.encode({"username": userjson["username"],"role":userjson["role"]}, "secret", algorithm="HS256")
+        response= JSONResponse(content={"message": "Logged in","token":token},status_code=HTTPStatus.OK)
+        response.set_cookie(key="token", value=token, httponly=True,samesite='Lax')
+        return response
     except Exception as e:
 
         return JSONResponse(content={"error": str(e)},status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 @app.post("/login")
-async def login(user : UserSignin):
+async def login(user : UserSignin) -> dict:
     try:
         users=await retrieve_users()
         for u in users:
             if u["username"]==user.username:
                 if bcrypt.checkpw(user.password.encode('utf-8'), u["password"].encode('utf-8')):
                     # Generate JWT token
-                    token = jwt.encode({"username": user.username}, "secret", algorithm="HS256")
-                    return JSONResponse(content={"token": token},status_code=HTTPStatus.OK)
+                    token = jwt.encode({"username": user.username,"role":u["role"]}, "secret", algorithm="HS256")
+                    response= JSONResponse(content={"message": "Logged in","token":token},status_code=HTTPStatus.OK)
+                    response.set_cookie(key="token", value=token, httponly=True,samesite='Lax')
+                    return response
         return {"error": "Invalid credentials"}   
     except Exception as e:
         print(e)
@@ -89,7 +90,7 @@ async def login(user : UserSignin):
     
 
 @app.get("/products")
-async def get_products(authorization: HTTPAuthorizationCredentials = Security(security_scheme)):
+async def get_products(authorization: HTTPAuthorizationCredentials = Security(security_scheme)) -> list[Product]:
     # print("Authorization Header: ",authorization)
     if authorization is None:
         return JSONResponse(content={"error": "Authorization token missing"},status_code=HTTPStatus.UNAUTHORIZED)
@@ -113,8 +114,7 @@ async def add_product_endpoint(product : Product, authorization: HTTPAuthorizati
         if user is None:
             return JSONResponse(content={"error": "Invalid token"},status_code=HTTPStatus.UNAUTHORIZED)
         # Check if the user has admin role
-        users=await retrieve_users()
-        current_user = next((u for u in users if u["username"] == user["username"]), None)
+        current_user = await retrieve_user(user["username"])
         if current_user is None or current_user.get("role") != "admin":
             return JSONResponse(content={"error": "Admin privileges required"},status_code=HTTPStatus.FORBIDDEN)
         
@@ -135,5 +135,33 @@ async def add_product_endpoint(product : Product, authorization: HTTPAuthorizati
     except jwt.InvalidTokenError:
         return JSONResponse(content={"error": "Invalid token"},status_code=HTTPStatus.UNAUTHORIZED)
     except Exception as e:
-        print(e)
+        # print(e)
+        return JSONResponse(content={"error": str(e)},status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+@app.put("/delete_product/{product_id}")
+async def delete_product(product_id: int, authorization: HTTPAuthorizationCredentials = Security(security_scheme)):
+    if authorization is None:
+        return JSONResponse(content={"error": "Authorization token missing"},status_code=HTTPStatus.UNAUTHORIZED)
+    try:
+        
+        user=jwt.decode(authorization.credentials, "secret", algorithms=["HS256"])
+        if user is None:
+            return JSONResponse(content={"error": "Invalid token"},status_code=HTTPStatus.UNAUTHORIZED)
+        # Check if the user has admin role
+        current_user =await retrieve_user(user["username"])
+        if current_user is None or current_user.get("role") != "admin":
+            return JSONResponse(content={"error": "Admin privileges required"},status_code=HTTPStatus.FORBIDDEN)
+        
+         # Delete the product from the database
+        products=await retrieve_products()
+        product_to_delete = next((p for p in products if int(p["product_id"]) == int(product_id)), None)
+        if product_to_delete is None:
+            return JSONResponse(content={"error": "Product not found"},status_code=HTTPStatus.NOT_FOUND)
+        await delete_product(product_id)
+        return JSONResponse(content={"message":"Product deleted"},status_code=HTTPStatus.OK)
+    except jwt.ExpiredSignatureError:
+        return JSONResponse(content={"error": "Token has expired"},status_code=HTTPStatus.UNAUTHORIZED)
+    except jwt.InvalidTokenError:
+        return JSONResponse(content={"error": "Invalid token"},status_code=HTTPStatus.UNAUTHORIZED)
+    except Exception as e:
+        # print(e)
         return JSONResponse(content={"error": str(e)},status_code=HTTPStatus.INTERNAL_SERVER_ERROR)

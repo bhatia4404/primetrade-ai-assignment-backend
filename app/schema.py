@@ -12,3 +12,7 @@ class Product(BaseModel):
     name: str
     price: float
     description: Optional[str] = None
+
+
+class healthcheckResponse(BaseModel):
+    status: str
