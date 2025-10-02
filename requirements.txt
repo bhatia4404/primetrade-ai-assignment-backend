@@ -3,3 +3,5 @@ pyjwt
 bcrypt
 gunicorn
 uvicorn
+motor>=3.3.2
+asyncio
